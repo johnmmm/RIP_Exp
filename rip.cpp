@@ -34,11 +34,11 @@ void boardcast_route(UINT8 iNo)	//To boardcast routes
 	rip_response->rip_header.command = 2;
 	rip_response->rip_header.must_be_zero = 0;
 
-	stud_rip_route_node* tmp_table = g_rip_route_table;
+	stud_rip_route_node *tmp_table = g_rip_route_table;
 	int place = 0;
 	while(tmp_table != NULL)
 	{
-		if(tmp_table->if_no != iNo && tmp_table->metric < 16) //it is OK to add it
+		if(tmp_table->if_no != iNo && tmp_table->metric < 16) //it is OK to add it(not from the No of the Request)
 		{
 			//htons in ppt to change short to network
 			rip_response->rip_entry[place].address_family_identifies = htons(2);
@@ -87,7 +87,68 @@ int stud_rip_packet_recv(char *pBuffer,int bufferSize,UINT8 iNo,UINT32 srcAdd)
 	else if(header->command == 2) //for response
 	{
 		//update
+		int response_num = (bufferSize - 4) / 20;
+		for(int i = 0; i < response_num; i++)
+		{
+			RIPEntry *entry = (RIPEntry*)(pBuffer + 4 + i * 20);	//find this entry
+			entry->ip_address = ntohl(entry->ip_address);	//change it into the host
+			entry->subnet_mask = ntohl(entry->subnet_mask);
+			entry->next_hop = ntohl(entry->next_hop);
+			entry->metric = ntohl(entry->metric);
 
+			stud_rip_route_node *tmp_table = g_rip_route_table;
+			bool response_new = true;
+
+			while(tmp_table != NULL)
+			{
+				if(entry->ip_address == tmp_table->dest && entry->subnet_mask == tmp_table->mask)
+				{
+					response_new = false;
+					if(srcAdd == tmp_table->nexthop)
+					{
+						if(entry->metric + 1 >= 16)//if >= 16 then 16
+						{
+							tmp_table->metric = 16;
+						}
+						else
+						{
+							tmp_table->metric = entry->metric + 1;
+						}
+						tmp_table->if_no = iNo;
+					}
+					else
+					{
+						if(entry->metric < tmp_table->metric)
+						{
+							if(entry->metric + 1 >= 16)//if >= 16 then 16
+							{
+								tmp_table->metric = 16;
+							}
+							else
+							{
+								tmp_table->metric = entry->metric + 1;
+							}
+							tmp_table->if_no = iNo;
+							tmp_table->nexthop = srcAdd;//new nexthop
+						}
+					}
+				}
+				
+				tmp_table = tmp_table->next;
+			}
+			
+			if(response_new && entry->metric + 1 < 16)//make a new one
+			{
+				stud_rip_route_node *tmp_node = new stud_rip_route_node();//new node in route
+				tmp_node->dest = entry->ip_address;
+				tmp_node->mask = entry->subnet_mask;
+				tmp_node->nexthop = srcAdd;
+				tmp_node->metric = entry->metric + 1;
+				tmp_node->if_no = iNo;
+				tmp_node->next = g_rip_route_table;
+				g_rip_route_table = tmp_node;//update the head
+			}
+		}
 	}
 
 	return 0;
@@ -107,7 +168,7 @@ void stud_rip_route_timeout(UINT32 destAdd, UINT32 mask, unsigned char msgType)
 	}	
 	else if(msgType == RIP_MSG_DELE_ROUTE)
 	{
-		stud_rip_route_node* tmp_table = g_rip_route_table;
+		stud_rip_route_node *tmp_table = g_rip_route_table;
 		while(tmp_table->dest != destAdd || tmp_table->mask != mask)
 		{
 			tmp_table = tmp_table->next;
