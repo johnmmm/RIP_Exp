@@ -27,23 +27,9 @@ struct RIPResponse //response sending
 	RIPEntry rip_entry[25];
 };
 
-int stud_rip_packet_recv(char *pBuffer,int bufferSize,UINT8 iNo,UINT32 srcAdd)
-{	
-	RIPHeader *header = (RIPHeader*)pBuffer;
-	if(header->version != 2)	//check version
-	{
-		ip_DiscardPkt(pBuffer, STUD_RIP_TEST_VERSION_ERROR);
-		return -1;
-	}
-	if(header->command != 1 && header->command != 2)	//check command
-	{
-		ip_DiscardPkt(pBuffer, STUD_RIP_TEST_COMMAND_ERROR);
-		return -1;
-	}
-
-	if(header->command == 1) //for request
-	{
-		RIPResponse *rip_response = new RIPResponse();
+void boardcast_route(UINT8 iNo)
+{
+	RIPResponse *rip_response = new RIPResponse();
 		rip_response->rip_header.version = 2;
 		rip_response->rip_header.command = 2;
 		rip_response->rip_header.must_be_zero = 0;
@@ -77,11 +63,31 @@ int stud_rip_packet_recv(char *pBuffer,int bufferSize,UINT8 iNo,UINT32 srcAdd)
 		}
 		UINT16 len = 4 + 20 * place;
 		rip_sendIpPkt((unsigned char*)rip_response, len, 520, iNo);
+}
+
+int stud_rip_packet_recv(char *pBuffer,int bufferSize,UINT8 iNo,UINT32 srcAdd)
+{	
+	RIPHeader *header = (RIPHeader*)pBuffer;
+	if(header->version != 2)	//check version
+	{
+		ip_DiscardPkt(pBuffer, STUD_RIP_TEST_VERSION_ERROR);
+		return -1;
+	}
+	if(header->command != 1 && header->command != 2)	//check command
+	{
+		ip_DiscardPkt(pBuffer, STUD_RIP_TEST_COMMAND_ERROR);
+		return -1;
+	}
+
+	if(header->command == 1) //for request
+	{
+		boardcast_route(iNo);
 	}
 
 	else if(header->command == 2) //for response
 	{
 		//update
+
 	}
 
 	return 0;
@@ -89,5 +95,19 @@ int stud_rip_packet_recv(char *pBuffer,int bufferSize,UINT8 iNo,UINT32 srcAdd)
 
 void stud_rip_route_timeout(UINT32 destAdd, UINT32 mask, unsigned char msgType)
 {
-		
+	if(msgType == RIP_MSG_SEND_ROUTE)	//boardcast route for every 30 seconds
+	{
+		//boardcast to No.1
+		UINT8 iNo = 1;
+		boardcast_route(iNo);
+
+		//boardcast to NO.2
+		iNo = 2;
+		boardcast_route(iNo);
+	}	
+	else if(msgType == RIP_MSG_DELE_ROUTE)
+	{
+
+	}
+	return;
 }
